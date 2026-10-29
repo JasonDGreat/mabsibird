@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mabsi Bird</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#101e30;color:#f2f8ff;font-family:system-ui,sans-serif;display:grid;place-items:center;padding:20px}.app{width:min(100%,440px)}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}h1{font-size:23px;margin:0}small{color:#91a9c2;letter-spacing:2px;font-size:10px}button{border:1px solid #38516d;border-radius:12px;background:#21354c;color:white;padding:11px 16px;font-weight:700;cursor:pointer}button:hover{background:#304b68}button:focus-visible,canvas:focus-visible{outline:3px solid #ffd36b;outline-offset:3px}.stage{position:relative;border:4px solid #31465e;border-radius:24px;overflow:hidden;box-shadow:0 24px 80px #0006}canvas{display:block;width:100%;height:auto;touch-action:none;background:#94dbe9}.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#10243935;pointer-events:none}.card{text-align:center;background:#102439eb;border:1px solid #ffffff30;border-radius:20px;padding:26px;width:84%;box-shadow:0 12px 40px #0003}.card h2{font-size:30px;margin:0 0 10px}.card p{color:#b6c9da;line-height:1.6}.card button{pointer-events:auto;background:#ffd36b;color:#172638;border:0;padding:14px 26px}.hidden{display:none}.stats{display:flex;justify-content:space-between;padding:15px 4px;color:#a9bfd3}.stats strong{color:#ffd36b}footer{text-align:center;color:#91a9c2;font-size:13px;line-height:1.8}kbd{background:#21354c;border-radius:5px;padding:2px 6px}
+</style></head>
+<body><main class="app"><header><div><small>ONE MORE TRY?</small><h1>Mabsi Bird 🐤</h1></div><button id="sound" aria-label="Mute sound" aria-pressed="false">🔊</button><button id="pause" aria-label="Pause game">Pause</button></header><div class="stage"><canvas id="game" width="400" height="580" tabindex="0" aria-label="Flappy Bird game. Space or up arrow to flap; P to pause."></canvas><div class="overlay" id="overlay"><div class="card"><h2 id="title">Ready to fly?</h2><p id="message">Keep your bird in the sky.<br>Fly between buildings to score.<br><br></p><button id="start">Let’s fly</button></div></div></div><div class="stats"><span>SCORE <strong id="score">0</strong></span><span>BEST <strong id="best">0</strong></span></div><footer><kbd>Space</kbd> / <kbd>↑</kbd> or tap to flap<br></footer><span id="announcement" role="status" aria-live="polite"></span></main>
+<script>
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay'),title=document.getElementById('title'),message=document.getElementById('message'),start=document.getElementById('start'),pauseButton=document.getElementById('pause'),scoreEl=document.getElementById('score'),bestEl=document.getElementById('best');
+const W=400,H=580,GROUND=520,R=14,GAP=156,PIPE=64,SPEED=145;
+let state='ready',bird={x:100,y:240,v:0},pipes=[],score=0,best=0,spawn=0,clock=0,last=0,accumulator=0;
+try{best=Math.max(0,Number(localStorage.getItem('sky-run-best'))||0)}catch(e){}bestEl.textContent=best;
+let audio,muted=false;
+try{muted=localStorage.getItem('flappy-muted')==='true'}catch(e){}
+const soundButton=document.getElementById('sound');
+function refreshSound(){soundButton.textContent=muted?'🔇':'🔊';soundButton.setAttribute('aria-label',muted?'Enable sound':'Mute sound');soundButton.setAttribute('aria-pressed',String(muted))}
+function unlockAudio(){try{const Engine=window.AudioContext||window.webkitAudioContext;if(!Engine)return;if(!audio)audio=new Engine();if(audio.state==='suspended')audio.resume().catch(()=>{})}catch(e){}}
+function tone(from,to,duration,delay=0,type='sine'){
+ if(muted||!audio||audio.state!=='running')return;
+ const osc=audio.createOscillator(),gain=audio.createGain(),time=audio.currentTime+delay;
+ osc.type=type;osc.frequency.setValueAtTime(from,time);osc.frequency.exponentialRampToValueAtTime(to,time+duration);
+ gain.gain.setValueAtTime(0,time);gain.gain.linearRampToValueAtTime(.10,time+.008);gain.gain.exponentialRampToValueAtTime(.001,time+duration);
+ osc.connect(gain);gain.connect(audio.destination);osc.start(time);osc.stop(time+duration+.02);osc.onended=()=>{osc.disconnect();gain.disconnect()};
+}
+function playSound(kind){if(kind==='flap')tone(420,780,.09);else if(kind==='score'){tone(880,880,.1);tone(1320,1320,.16,.1)}else{tone(160,45,.25,0,'triangle');tone(350,100,.35,.12)}}
+soundButton.addEventListener('click',()=>{muted=!muted;try{localStorage.setItem('flappy-muted',String(muted))}catch(e){}refreshSound();canvas.focus()});
+document.addEventListener('pointerdown',unlockAudio,true);document.addEventListener('keydown',unlockAudio,true);refreshSound();
+function show(heading,body,label){title.textContent=heading;message.textContent=body;start.textContent=label;overlay.classList.remove('hidden')}
+function begin(){unlockAudio();playSound("flap");bird={x:100,y:240,v:-320};pipes=[];score=0;spawn=.6;scoreEl.textContent=0;state='playing';overlay.classList.add('hidden');pauseButton.textContent='Pause';accumulator=0;canvas.focus()}
+function flap(){if(state==='ready'||state==='over'){begin()}else if(state==='playing'){bird.v=-320;playSound("flap")}}
+function togglePause(){if(state==='playing'){state='paused';show('Flight paused','Take a breath. Your flight will wait.','Resume');pauseButton.textContent='Resume'}else if(state==='paused'){state='playing';overlay.classList.add('hidden');pauseButton.textContent='Pause';accumulator=0;canvas.focus()}}
+function end(){playSound("hit");state='over';if(score>best){best=score;bestEl.textContent=best;try{localStorage.setItem('sky-run-best',best)}catch(e){}}show('Nice flight!',`You scored ${score}. Best flight: ${best}. Ready for another?`,'Fly again');document.getElementById('announcement').textContent=`Game over. Score ${score}.`;}
+function hitRect(x,y,w,h){const nx=Math.max(x,Math.min(bird.x,x+w)),ny=Math.max(y,Math.min(bird.y,y+h));return (bird.x-nx)**2+(bird.y-ny)**2<R*R}
+function update(dt){
+ clock+=dt;if(state!=='playing')return;
+ bird.v+=1000*dt;bird.y+=bird.v*dt;spawn-=dt;
+ if(spawn<=0){const top=100+Math.random()*160;pipes.push({x:W+10,top,baseTop:top,motion:0,passed:false});spawn=1.55}
+ const moving=score>50,fast=score>=80;
+ for(const p of pipes){
+  p.x-=(fast?195:SPEED)*dt;
+  // Begin each building at its current height: no jump at the threshold.
+  if(moving){p.motion+=dt*(fast?2.4:1.6);p.top=p.baseTop+48*Math.sin(p.motion)}
+  if(hitRect(p.x,0,PIPE,p.top)||hitRect(p.x,p.top+GAP,PIPE,GROUND-p.top-GAP)){end();return}
+  if(!p.passed&&p.x+PIPE<bird.x-R){p.passed=true;score++;scoreEl.textContent=score;playSound('score');if(score===51)document.getElementById('announcement').textContent='Moving buildings unlocked!';if(score===80)document.getElementById('announcement').textContent='Night mode activated! Buildings now move faster.'}
+ }
+ pipes=pipes.filter(p=>p.x+PIPE>-10);
+ if(bird.y+R>=GROUND||bird.y-R<=0)end();
+}
+function cloud(x,y,s){ctx.fillStyle=score>=80?'#60749444':'#ffffffaa';ctx.beginPath();ctx.ellipse(x,y,30*s,12*s,0,0,Math.PI*2);ctx.ellipse(x-14*s,y-7*s,17*s,14*s,0,0,Math.PI*2);ctx.ellipse(x+9*s,y-13*s,19*s,18*s,0,0,Math.PI*2);ctx.fill()}
+function building(x,y,h,top){
+ ctx.save();ctx.beginPath();ctx.rect(x,y,PIPE,h);ctx.clip();
+ ctx.fillStyle=top?'#3a526f':'#334660';ctx.fillRect(x,y,PIPE,h);
+ ctx.fillStyle='#587596';ctx.fillRect(x+3,y,6,h);
+ ctx.fillStyle='#20364f';ctx.fillRect(x+PIPE-10,y,10,h);
+ for(let row=0;row<Math.ceil(h/25);row++){
+  const wy=top?y+h-21-row*25:y+14+row*25;
+  for(let col=0;col<3;col++){ctx.fillStyle=(row+col)%4===0?'#7799b1':'#ffe2a0';ctx.fillRect(x+13+col*14,wy,8,12)}
+ }
+ ctx.fillStyle='#172c44';ctx.fillRect(x,top?y+h-6:y,PIPE,6);
+ ctx.fillStyle='#95b2c7';ctx.fillRect(x,top?y+h-6:y,PIPE,2);
+ ctx.restore();
+}
+function draw(){const night=score>=80;const sky=ctx.createLinearGradient(0,0,0,GROUND);sky.addColorStop(0,night?'#090f28':'#7bcbdc');sky.addColorStop(1,night?'#283651':'#d1f0df');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);if(night){ctx.fillStyle='#dceaff';for(let i=0;i<45;i++){const x=(i*97+23)%W,y=(i*59+17)%360;ctx.fillRect(x,y,i%4===0?2:1,i%4===0?2:1)}}ctx.fillStyle=night?'#e5edff':'#fff0b5';ctx.beginPath();ctx.arc(330,80,29,0,Math.PI*2);ctx.fill();if(night){ctx.fillStyle='#101a35';ctx.beginPath();ctx.arc(341,73,25,0,Math.PI*2);ctx.fill();}for(let i=0;i<4;i++)cloud(((i*143-clock*9)%560+560)%560-60,110+(i%2)*74,.9);ctx.fillStyle=night?'#18283d':'#92c7b4';for(let i=0;i<10;i++){ctx.fillRect(i*48,GROUND-50-(i%3)*13,39,100)}for(const p of pipes){building(p.x,0,p.top,true);building(p.x,p.top+GAP,GROUND-p.top-GAP,false)}ctx.fillStyle=night?'#425b60':'#72b96a';ctx.fillRect(0,GROUND,W,10);ctx.fillStyle=night?'#253247':'#f0d49b';ctx.fillRect(0,GROUND+10,W,50);ctx.fillStyle=night?'#42546b':'#d9b67a';for(let i=0;i<17;i++)ctx.fillRect(i*28-(clock*45%28),GROUND+19,14,4);ctx.save();ctx.translate(bird.x,state==='ready'?bird.y+Math.sin(clock*3)*7:bird.y);ctx.rotate(state==='ready'?0:Math.max(-.45,Math.min(1.2,bird.v/650)));ctx.strokeStyle='#663e29';ctx.lineWidth=2.5;ctx.fillStyle='#ffcf50';ctx.beginPath();ctx.ellipse(0,0,17,14,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#f6a934';ctx.beginPath();ctx.ellipse(-7,4,9,6,Math.sin(clock*22)*.35,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='white';ctx.beginPath();ctx.arc(8,-5,7,0,Math.PI*2);ctx.fill();ctx.fillStyle='#172638';ctx.beginPath();ctx.arc(10,-5,2.6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#f17f43';ctx.beginPath();ctx.moveTo(12,3);ctx.lineTo(25,3);ctx.lineTo(13,9);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();if(state==='playing'){ctx.font='bold 48px system-ui';ctx.textAlign='center';ctx.lineWidth=5;ctx.strokeStyle='#254656';ctx.strokeText(score,W/2,65);ctx.fillStyle='white';ctx.fillText(score,W/2,65);if(score>50){ctx.font='bold 12px system-ui';ctx.fillStyle=night?'#ffe2a0':'#254656';ctx.fillText(night?'NIGHT' :'FLIGHT ',W/2,88)}}}
+function frame(time){if(!last)last=time;const elapsed=Math.min((time-last)/1000,.05);last=time;if(state!=='paused'){accumulator+=elapsed;while(accumulator>=1/120){update(1/120);accumulator-=1/120}}draw();requestAnimationFrame(frame)}
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();flap()});start.addEventListener('click',()=>state==='paused'?togglePause():begin());pauseButton.addEventListener('click',togglePause);
+document.addEventListener('keydown',e=>{if(e.target.tagName==='BUTTON')return;if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();if(!e.repeat)flap()}else if(e.code==='KeyP'){if(!e.repeat)togglePause()}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='playing')togglePause()});requestAnimationFrame(frame);
+</script></body></html>
